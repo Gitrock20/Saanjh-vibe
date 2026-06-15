@@ -3,13 +3,13 @@ import { useState, useEffect } from "react";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { cart, useCart } from "@/lib/cart-store";
 import { formatINR } from "@/lib/products";
-import { Check, CreditCard, Smartphone, Banknote, Wallet, ExternalLink } from "lucide-react";
+import { ShieldCheck, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.jpg";
 import { logUserActivity, registerOrder } from "@/lib/activity";
 import { createRazorpayOrder, verifyRazorpayPayment, sendOrderEmail } from "@/lib/api/payment.functions";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where, limit, doc, getDoc, setDoc } from "firebase/firestore";
+import { db, auth } from "@/lib/firebase";
 
 export const Route = createFileRoute("/checkout")({ component: Checkout });
 
@@ -25,7 +25,10 @@ function Checkout() {
   const shipping = (subtotal > 999 || (appliedCoupon && (appliedCoupon.type === "free_delivery" || appliedCoupon.code === "FREESHIPPING"))) ? 0 : 99;
   const total = Math.max(0, subtotal - discount) + shipping;
   const [pay, setPay] = useState("razorpay");
-  const [loading, setLoading] = useState(false);
+  const [billingOption, setBillingOption] = useState<"same" | "different">("same");
+  const [billingForm, setBillingForm] = useState({ address: "", city: "", state: "", pinCode: "" });
+  const [saveInfo, setSaveInfo] = useState(false);
+  const [orderNote, setOrderNote] = useState("");
   const [form, setForm] = useState({
     email: "",
     firstName: "",
@@ -37,6 +40,39 @@ function Checkout() {
     phone: "",
     gstin: "",
   });
+
+  const [loading, setLoading] = useState(false);
+
+  // Auto-load saved address for logged-in users
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid, "savedAddress", "default"));
+        if (snap.exists()) {
+          const data = snap.data();
+          setForm(prev => ({
+            ...prev,
+            email: data.email || user.email || prev.email,
+            firstName: data.firstName || prev.firstName,
+            lastName: data.lastName || prev.lastName,
+            address: data.address || prev.address,
+            city: data.city || prev.city,
+            state: data.state || prev.state,
+            pinCode: data.pinCode || prev.pinCode,
+            phone: data.phone || prev.phone,
+            gstin: data.gstin || prev.gstin,
+          }));
+          setSaveInfo(true); // keep it checked so they know it's saved
+        } else if (user.email) {
+          setForm(prev => ({ ...prev, email: user.email! }));
+        }
+      } catch (e) {
+        console.warn("Could not load saved address:", e);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     // Pre-load Razorpay checkout script
@@ -139,8 +175,32 @@ function Checkout() {
     const customerName = `${form.firstName} ${form.lastName}`.trim();
     const itemsCount = items.reduce((sum, item) => sum + item.qty, 0);
 
+    // Save address to Firestore if user is logged in and opted in
+    const saveAddressIfRequested = async () => {
+      if (!saveInfo) return;
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        await setDoc(doc(db, "users", user.uid, "savedAddress", "default"), {
+          email: form.email,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          address: form.address,
+          city: form.city,
+          state: form.state,
+          pinCode: form.pinCode,
+          phone: form.phone,
+          gstin: form.gstin,
+          savedAt: Date.now(),
+        });
+      } catch (e) {
+        console.warn("Could not save address:", e);
+      }
+    };
+
     if (pay === "cod") {
       setLoading(true);
+      await saveAddressIfRequested();
       const customOrderId = `COD-${Date.now().toString().slice(-6)}`;
       registerOrder(form.email, customerName, itemsCount, total, form.city, customOrderId, items, {
         address: form.address,
@@ -149,7 +209,7 @@ function Checkout() {
         pinCode: form.pinCode,
         phone: form.phone,
         gstin: form.gstin
-      });
+      }, orderNote);
       logUserActivity("Place Order (COD)", `Placed order ${customOrderId} for total ${formatINR(total)} via Cash on Delivery`);
       toast.success("Order placed successfully!");
 
@@ -207,6 +267,7 @@ function Checkout() {
     }
 
     setLoading(true);
+    await saveAddressIfRequested();
     const toastId = toast.loading("Initiating secure payment order...");
 
     try {
@@ -244,8 +305,8 @@ function Checkout() {
       // 2. Open Razorpay Checkout modal
       const options: any = {
         key: razorpayKey,
-        amount: isStaticFallback ? amountInPaise : orderRes.amount,
-        currency: isStaticFallback ? "INR" : orderRes.currency,
+        amount: isStaticFallback ? amountInPaise : orderRes?.amount,
+        currency: isStaticFallback ? "INR" : orderRes?.currency,
         name: "Saanjh",
         description: "Luxury Candles & Jewellery",
         image: logo,
@@ -260,7 +321,7 @@ function Checkout() {
               pinCode: form.pinCode,
               phone: form.phone,
               gstin: form.gstin
-            });
+            }, orderNote);
             logUserActivity(
               "Place Order (Razorpay - Client Fallback)",
               `Placed order ${paymentId} for total ${formatINR(total)} via Razorpay Client Fallback`
@@ -315,7 +376,7 @@ function Checkout() {
                 pinCode: form.pinCode,
                 phone: form.phone,
                 gstin: form.gstin
-              });
+              }, orderNote);
               logUserActivity(
                 "Place Order (Razorpay)",
                 `Placed order ${paymentId} for total ${formatINR(total)} via Razorpay`
@@ -374,7 +435,7 @@ function Checkout() {
               data: {
                 email: form.email,
                 name: customerName,
-                orderId: isStaticFallback ? `FAIL-${Date.now().toString().slice(-6)}` : (orderRes.order_id || `FAIL-${Date.now().toString().slice(-6)}`),
+                orderId: isStaticFallback ? `FAIL-${Date.now().toString().slice(-6)}` : (orderRes?.order_id || `FAIL-${Date.now().toString().slice(-6)}`),
                 amount: total,
                 itemsCount: itemsCount,
                 status: "failed",
@@ -387,7 +448,7 @@ function Checkout() {
       };
 
       if (!isStaticFallback) {
-        options.order_id = orderRes.order_id;
+        options.order_id = orderRes?.order_id;
       }
 
       toast.dismiss(toastId);
@@ -419,13 +480,7 @@ function Checkout() {
     }
   };
 
-  const methods = [
-    { id: "razorpay", Icon: Wallet, t: "Razorpay", s: "Cards, UPI, Wallets — secure" },
-    { id: "upi", Icon: Smartphone, t: "UPI", s: "GPay, PhonePe, Paytm" },
-    { id: "card", Icon: CreditCard, t: "Credit / Debit Card", s: "Visa, Mastercard, RuPay" },
-    { id: "paylink", Icon: ExternalLink, t: "Direct Payment Link", s: "Redirect to Razorpay Payment Page" },
-    { id: "cod", Icon: Banknote, t: "Cash on Delivery", s: "Pay when it arrives" },
-  ];
+
 
   return (
     <SiteShell>
@@ -503,27 +558,240 @@ function Checkout() {
                   disabled={loading}
                 />
               </div>
+
+              {/* Save address checkbox */}
+              <label className="flex items-center gap-3 mt-5 cursor-pointer select-none group">
+                <span className={`relative w-5 h-5 shrink-0 rounded border-2 transition-all flex items-center justify-center ${
+                  saveInfo
+                    ? "bg-foreground border-foreground"
+                    : "border-border group-hover:border-foreground/60 bg-transparent"
+                }`}>
+                  {saveInfo && (
+                    <svg className="w-3 h-3 text-background" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+                    </svg>
+                  )}
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={saveInfo}
+                    onChange={(e) => setSaveInfo(e.target.checked)}
+                    disabled={loading}
+                  />
+                </span>
+                <span className="text-sm">
+                  Save this{" "}
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">information</span>
+                  {" "}for next time
+                </span>
+                {!auth.currentUser && saveInfo && (
+                  <span className="ml-auto text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    ⚠ Log in to save
+                  </span>
+                )}
+              </label>
+            </section>
+
+            {/* Order Note section */}
+            <section>
+              <p className="text-sm font-medium mb-2" style={{ color: "#7a4f2e" }}>Add a note to your order</p>
+              <textarea
+                rows={3}
+                value={orderNote}
+                onChange={(e) => setOrderNote(e.target.value)}
+                disabled={loading}
+                placeholder="Special instructions, gift messages, delivery notes…"
+                className="w-full bg-background border border-[#c89b6e] rounded px-4 py-3 text-sm resize-y focus:outline-none focus:border-[#a0723e] transition placeholder:text-muted-foreground/60 disabled:opacity-50"
+              />
             </section>
             <section>
-              <h2 className="font-serif text-xl mb-5">Payment</h2>
-              <div className="space-y-3">
-                {methods.map((m) => (
-                  <label
-                    key={m.id}
-                    className={`flex items-center gap-4 p-4 border rounded cursor-pointer transition ${
-                      pay === m.id ? "border-foreground bg-foreground/5" : "border-border hover:border-foreground/50"
-                    } ${loading ? "opacity-50 pointer-events-none" : ""}`}
-                  >
-                    <input type="radio" name="pay" value={m.id} checked={pay === m.id} onChange={() => setPay(m.id)} className="sr-only" disabled={loading} />
-                    <m.Icon className="h-5 w-5 text-gold" />
-                    <div className="flex-1">
-                      <div className="font-medium">{m.t}</div>
-                      <div className="text-xs text-muted-foreground">{m.s}</div>
-                    </div>
-                    {pay === m.id && <Check className="h-4 w-4" />}
-                  </label>
-                ))}
+              {/* Payment Section Header */}
+              <div className="mb-4">
+                <h2 className="font-serif text-2xl font-semibold">Payment</h2>
+                <p className="text-sm text-emerald-600 flex items-center gap-1.5 mt-1">
+                  <ShieldCheck className="h-4 w-4" />
+                  All transactions are secure and encrypted.
+                </p>
               </div>
+
+              <div className={`space-y-0 rounded-lg border border-border overflow-hidden ${loading ? "opacity-50 pointer-events-none" : ""}`}>
+
+                {/* Razorpay Option */}
+                <label
+                  className={`flex items-center gap-4 px-4 py-4 cursor-pointer transition ${
+                    pay === "razorpay" ? "bg-blue-50/60 dark:bg-blue-950/20 border-b border-border" : "bg-background hover:bg-secondary/30 border-b border-border"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="pay"
+                    value="razorpay"
+                    checked={pay === "razorpay"}
+                    onChange={() => setPay("razorpay")}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  {/* Custom Radio */}
+                  <span className={`w-4.5 h-4.5 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                    pay === "razorpay" ? "border-foreground" : "border-muted-foreground/50"
+                  }`}>
+                    {pay === "razorpay" && <span className="w-2 h-2 rounded-full bg-foreground" />}
+                  </span>
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                      Razorpay Secure (UPI, Cards, Int'l Cards, Wallets)
+                    </span>
+                  </div>
+                  {/* Payment brand icons */}
+                  <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                    {/* UPI */}
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide bg-[#097939] text-white" style={{fontFamily: 'sans-serif'}}>UPI</span>
+                    {/* VISA */}
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#1a1f71] text-white" style={{fontFamily: 'serif', letterSpacing: '0.05em'}}>VISA</span>
+                    {/* Mastercard */}
+                    <span className="inline-flex items-center justify-center rounded overflow-hidden">
+                      <svg width="28" height="18" viewBox="0 0 38 24">
+                        <circle cx="15" cy="12" r="10" fill="#EB001B" />
+                        <circle cx="23" cy="12" r="10" fill="#F79E1B" />
+                        <path d="M19 5.5a10 10 0 010 13A10 10 0 0119 5.5z" fill="#FF5F00" />
+                      </svg>
+                    </span>
+                    {/* +17 badge */}
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] font-semibold">+17</span>
+                  </div>
+                </label>
+
+                {/* Info banner when Razorpay selected */}
+                {pay === "razorpay" && (
+                  <div className="px-4 py-4 bg-muted/50 text-sm text-muted-foreground text-center">
+                    You'll be redirected to Razorpay Secure (UPI, Cards, Int'l Cards, Wallets) to complete your purchase.
+                  </div>
+                )}
+
+                {/* Cash on Delivery Option */}
+                <label
+                  className={`flex items-center gap-4 px-4 py-4 cursor-pointer transition ${
+                    pay === "cod" ? "bg-amber-50/60 dark:bg-amber-950/20" : "bg-background hover:bg-secondary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="pay"
+                    value="cod"
+                    checked={pay === "cod"}
+                    onChange={() => setPay("cod")}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  <span className={`w-4.5 h-4.5 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                    pay === "cod" ? "border-foreground" : "border-muted-foreground/50"
+                  }`}>
+                    {pay === "cod" && <span className="w-2 h-2 rounded-full bg-foreground" />}
+                  </span>
+                  <Banknote className="h-4.5 w-4.5 text-amber-600 shrink-0" />
+                  <span className="text-sm font-medium">Cash on Delivery</span>
+                  <span className="ml-auto text-xs text-muted-foreground">Pay when it arrives</span>
+                </label>
+
+              </div>
+
+              {pay === "cod" && (
+                <div className="mt-3 px-4 py-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40 rounded-lg text-sm text-amber-800 dark:text-amber-300 text-center">
+                  Your order will be shipped and payment collected at the time of delivery.
+                </div>
+              )}
+            </section>
+
+            {/* Billing address section */}
+            <section>
+              <h2 className="font-serif text-2xl font-semibold mb-4">Billing address</h2>
+              <div className={`rounded-lg border border-border overflow-hidden ${loading ? "opacity-50 pointer-events-none" : ""}`}>
+
+                {/* Same as shipping */}
+                <label
+                  className={`flex items-center gap-4 px-4 py-4 cursor-pointer transition border-b border-border ${
+                    billingOption === "same" ? "bg-blue-50/60 dark:bg-blue-950/20" : "bg-background hover:bg-secondary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="billing"
+                    value="same"
+                    checked={billingOption === "same"}
+                    onChange={() => setBillingOption("same")}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  <span className={`w-4.5 h-4.5 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                    billingOption === "same" ? "border-foreground" : "border-muted-foreground/50"
+                  }`}>
+                    {billingOption === "same" && <span className="w-2 h-2 rounded-full bg-foreground" />}
+                  </span>
+                  <span className="text-sm font-medium">
+                    Same as{" "}
+                    <span className="text-blue-600 dark:text-blue-400">shipping address</span>
+                  </span>
+                </label>
+
+                {/* Different billing address */}
+                <label
+                  className={`flex items-center gap-4 px-4 py-4 cursor-pointer transition ${
+                    billingOption === "different" ? "bg-blue-50/60 dark:bg-blue-950/20" : "bg-background hover:bg-secondary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="billing"
+                    value="different"
+                    checked={billingOption === "different"}
+                    onChange={() => setBillingOption("different")}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  <span className={`w-4.5 h-4.5 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                    billingOption === "different" ? "border-foreground" : "border-muted-foreground/50"
+                  }`}>
+                    {billingOption === "different" && <span className="w-2 h-2 rounded-full bg-foreground" />}
+                  </span>
+                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Use a different billing address</span>
+                </label>
+
+              </div>
+
+              {/* Expanded billing address fields */}
+              {billingOption === "different" && (
+                <div className="mt-4 grid sm:grid-cols-2 gap-4 border border-border rounded-lg p-4 bg-muted/20">
+                  <Field
+                    label="Billing Address"
+                    className="sm:col-span-2"
+                    required
+                    value={billingForm.address}
+                    onChange={(e) => setBillingForm({ ...billingForm, address: e.target.value })}
+                    disabled={loading}
+                  />
+                  <Field
+                    label="City"
+                    required
+                    value={billingForm.city}
+                    onChange={(e) => setBillingForm({ ...billingForm, city: e.target.value })}
+                    disabled={loading}
+                  />
+                  <Field
+                    label="State"
+                    required
+                    value={billingForm.state}
+                    onChange={(e) => setBillingForm({ ...billingForm, state: e.target.value })}
+                    disabled={loading}
+                  />
+                  <Field
+                    label="PIN Code"
+                    required
+                    value={billingForm.pinCode}
+                    onChange={(e) => setBillingForm({ ...billingForm, pinCode: e.target.value })}
+                    disabled={loading}
+                  />
+                </div>
+              )}
             </section>
           </div>
 

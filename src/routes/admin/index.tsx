@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Area, AreaChart, Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatINR } from "@/lib/products";
@@ -47,6 +47,10 @@ function AdminHome() {
   const [orders, setOrders] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [showOrdersDetail, setShowOrdersDetail] = useState(false);
+  const [showRevenueDetail, setShowRevenueDetail] = useState(false);
+  const [showCustomersDetail, setShowCustomersDetail] = useState(false);
+  const [showLowStockDetail, setShowLowStockDetail] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -148,10 +152,58 @@ function AdminHome() {
   });
   
   const stats = [
-    { Icon: TrendingUp, l: "Revenue (mo)", v: formatINR(totalRevenue), d: totalRevenue > 0 ? "+100% growth" : "0% growth" },
-    { Icon: ShoppingBag, l: "Orders", v: String(totalOrders), d: totalOrders > 0 ? "Active storefront" : "No orders yet" },
-    { Icon: Users, l: "Customers", v: String(totalCustomers), d: totalCustomers > 0 ? "Registered users" : "No customers yet" },
-    { Icon: Package, l: "Low stock", v: String(lowStockCount), d: lowStockCount > 0 ? "Needs attention" : "All stock healthy" },
+    { 
+      Icon: TrendingUp, 
+      l: "Revenue (mo)", 
+      v: formatINR(totalRevenue), 
+      d: totalRevenue > 0 ? "+100% growth" : "0% growth",
+      isOpen: showRevenueDetail,
+      toggle: () => {
+        setShowRevenueDetail(!showRevenueDetail);
+        setShowOrdersDetail(false);
+        setShowCustomersDetail(false);
+        setShowLowStockDetail(false);
+      }
+    },
+    { 
+      Icon: ShoppingBag, 
+      l: "Orders", 
+      v: String(totalOrders), 
+      d: totalOrders > 0 ? "Active storefront" : "No orders yet",
+      isOpen: showOrdersDetail,
+      toggle: () => {
+        setShowOrdersDetail(!showOrdersDetail);
+        setShowRevenueDetail(false);
+        setShowCustomersDetail(false);
+        setShowLowStockDetail(false);
+      }
+    },
+    { 
+      Icon: Users, 
+      l: "Customers", 
+      v: String(totalCustomers), 
+      d: totalCustomers > 0 ? "Registered users" : "No customers yet",
+      isOpen: showCustomersDetail,
+      toggle: () => {
+        setShowCustomersDetail(!showCustomersDetail);
+        setShowRevenueDetail(false);
+        setShowOrdersDetail(false);
+        setShowLowStockDetail(false);
+      }
+    },
+    { 
+      Icon: Package, 
+      l: "Low stock", 
+      v: String(lowStockCount), 
+      d: lowStockCount > 0 ? "Needs attention" : "All stock healthy",
+      isOpen: showLowStockDetail,
+      toggle: () => {
+        setShowLowStockDetail(!showLowStockDetail);
+        setShowRevenueDetail(false);
+        setShowOrdersDetail(false);
+        setShowCustomersDetail(false);
+      }
+    },
   ];
 
   return (
@@ -162,37 +214,30 @@ function AdminHome() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map(({ Icon, l, v, d }) => {
-          const isOrders = l === "Orders";
+        {stats.map(({ Icon, l, v, d, isOpen, toggle }) => {
           return (
             <Card 
               key={l} 
-              onClick={() => isOrders && setShowOrdersDetail(!showOrdersDetail)}
-              className={`p-5 transition-all duration-300 ${
-                isOrders 
-                  ? "cursor-pointer hover:shadow-md hover:border-gold/40 hover:bg-secondary/10" 
-                  : ""
+              onClick={toggle}
+              className={`p-5 transition-all duration-300 cursor-pointer hover:shadow-md hover:border-gold/40 hover:bg-secondary/10 ${
+                isOpen ? "border-gold bg-secondary/10 shadow-sm" : ""
               }`}
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-xs uppercase tracking-widest flex items-center gap-1.5">
                   {l}
-                  {isOrders && (
-                    <span className="text-[9px] bg-gold/10 text-gold px-1.5 py-0.5 rounded font-sans normal-case tracking-normal font-semibold">
-                      {showOrdersDetail ? "Click to collapse" : "Click to view"}
-                    </span>
-                  )}
+                  <span className="text-[9px] bg-gold/10 text-gold px-1.5 py-0.5 rounded font-sans normal-case tracking-normal font-semibold">
+                    {isOpen ? "Click to collapse" : "Click to view"}
+                  </span>
                 </span>
                 <Icon className="h-4 w-4 text-gold" />
               </div>
               <div className="mt-3 font-serif text-3xl flex items-baseline justify-between">
                 <span>{v}</span>
-                {isOrders && (
-                  showOrdersDetail ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground/60" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground/60 animate-bounce" />
-                  )
+                {isOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground/60" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground/60 animate-bounce" />
                 )}
               </div>
               <div className="text-xs text-muted-foreground mt-1">{d}</div>
@@ -354,6 +399,264 @@ function AdminHome() {
               </table>
             </div>
           )}
+        </Card>
+      )}
+
+      {showRevenueDetail && (
+        <Card className="p-6 border border-gold/20 shadow-md animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center justify-between mb-5 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-gold" />
+              <h3 className="font-serif text-2xl">Revenue Detailed Analytics</h3>
+            </div>
+            <button 
+              onClick={() => setShowRevenueDetail(false)}
+              className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition underline cursor-pointer font-medium"
+            >
+              Close Section
+            </button>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mb-6">
+            <Card className="p-4 bg-secondary/5 border-none">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider block">Total Sales Revenue</span>
+              <span className="font-serif text-3xl mt-1 block text-gold">{formatINR(totalRevenue)}</span>
+              <span className="text-[10px] text-muted-foreground mt-1 block">Cumulative order value</span>
+            </Card>
+            <Card className="p-4 bg-secondary/5 border-none">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider block">Total Completed Orders</span>
+              <span className="font-serif text-3xl mt-1 block text-gold">{totalOrders}</span>
+              <span className="text-[10px] text-muted-foreground mt-1 block">Active storefront orders count</span>
+            </Card>
+            <Card className="p-4 bg-secondary/5 border-none">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider block">Average Order Value</span>
+              <span className="font-serif text-3xl mt-1 block text-gold">
+                {totalOrders > 0 ? formatINR(totalRevenue / totalOrders) : formatINR(0)}
+              </span>
+              <span className="text-[10px] text-muted-foreground mt-1 block">Average cart size per order</span>
+            </Card>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Monthly breakdown table */}
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                Monthly Breakdown
+              </h4>
+              <div className="overflow-x-auto border border-border rounded-lg">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-secondary/20 border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="px-4 py-2.5 font-medium">Month</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {dynamicRevenue.map((r, idx) => (
+                      <tr key={idx} className="hover:bg-secondary/10">
+                        <td className="px-4 py-2.5 font-medium">{r.m}</td>
+                        <td className="px-4 py-2.5 text-right font-medium text-gold">{formatINR(r.v)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Top Revenue Contributing Orders */}
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                Highest Value Orders
+              </h4>
+              <div className="overflow-x-auto border border-border rounded-lg">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-secondary/20 border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="px-4 py-2.5 font-medium">Order ID</th>
+                      <th className="px-4 py-2.5 font-medium">Customer</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {[...orders]
+                      .sort((a, b) => (b.total || 0) - (a.total || 0))
+                      .slice(0, 5)
+                      .map((o) => (
+                        <tr key={o.id} className="hover:bg-secondary/10">
+                          <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{o.id}</td>
+                          <td className="px-4 py-2.5">{o.customer || o.name || "Guest"}</td>
+                          <td className="px-4 py-2.5 text-right font-medium">{formatINR(o.total || o.amount || 0)}</td>
+                        </tr>
+                      ))}
+                    {orders.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                          No order revenue data recorded
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {showCustomersDetail && (
+        <Card className="p-6 border border-gold/20 shadow-md animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-gold" />
+              <h3 className="font-serif text-2xl">Registered Customers Detailed View</h3>
+            </div>
+            <div className="flex items-center gap-4">
+              <input
+                type="text"
+                placeholder="Search customers..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="bg-secondary/35 border border-border rounded px-3 py-1.5 text-xs focus:outline-none focus:border-gold transition w-48"
+              />
+              <button 
+                onClick={() => setShowCustomersDetail(false)}
+                className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition underline cursor-pointer font-medium shrink-0"
+              >
+                Close Section
+              </button>
+            </div>
+          </div>
+
+          {customers.filter(c => 
+            (c.name || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+            (c.email || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+            (c.city || "").toLowerCase().includes(customerSearch.toLowerCase())
+          ).length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">
+              No registered customers found matching your search.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="py-3 font-medium">Customer Details</th>
+                    <th className="py-3 font-medium">Location</th>
+                    <th className="py-3 font-medium text-center">Orders Count</th>
+                    <th className="py-3 font-medium text-right">Total Spent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {customers.filter(c => 
+                    (c.name || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+                    (c.email || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+                    (c.city || "").toLowerCase().includes(customerSearch.toLowerCase())
+                  ).map((c: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-secondary/10">
+                      <td className="py-3">
+                        <div className="font-medium text-foreground">{c.name || "N/A"}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{c.email || "N/A"}</div>
+                      </td>
+                      <td className="py-3 text-muted-foreground">{c.city || "N/A"}</td>
+                      <td className="py-3 text-center font-medium">{c.orders || 0}</td>
+                      <td className="py-3 font-medium text-right text-gold">{formatINR(c.spent || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-4 pt-4 border-t border-border flex justify-end">
+            <Link 
+              to="/admin/customers"
+              className="text-xs uppercase tracking-wider text-gold hover:underline font-semibold flex items-center gap-1"
+            >
+              Go to Customers Management Page →
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {showLowStockDetail && (
+        <Card className="p-6 border border-gold/20 shadow-md animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center justify-between mb-5 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-gold" />
+              <h3 className="font-serif text-2xl">Low Stock Inventory Detailed View</h3>
+            </div>
+            <button 
+              onClick={() => setShowLowStockDetail(false)}
+              className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition underline cursor-pointer font-medium"
+            >
+              Close Section
+            </button>
+          </div>
+
+          {products.filter((p) => p.stock < 10).length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center bg-emerald-50/10 border border-emerald-500/20 rounded-lg">
+              ✨ All products have healthy stock levels. No low stock items!
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="py-3 font-medium">Product Info</th>
+                    <th className="py-3 font-medium">Category</th>
+                    <th className="py-3 font-medium text-center">Current Stock</th>
+                    <th className="py-3 font-medium">Price</th>
+                    <th className="py-3 font-medium text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {products.filter((p) => p.stock < 10).map((p: any) => {
+                    const isOutOfStock = p.stock === 0;
+                    return (
+                      <tr key={p.id} className="hover:bg-secondary/10">
+                        <td className="py-3 flex items-center gap-3">
+                          {p.image && (
+                            <img
+                              src={p.image}
+                              alt={p.name}
+                              className="h-10 w-8 object-cover rounded bg-muted border border-border/50"
+                            />
+                          )}
+                          <div>
+                            <div className="font-medium text-foreground">{p.name}</div>
+                            <div className="text-[10px] text-muted-foreground font-mono uppercase">{p.id}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 text-muted-foreground">{p.category || p.subCategory || "N/A"}</td>
+                        <td className="py-3 text-center">
+                          <span className={`font-semibold ${isOutOfStock ? "text-rose-600" : p.stock < 3 ? "text-rose-500" : "text-amber-500"}`}>
+                            {p.stock} units
+                          </span>
+                        </td>
+                        <td className="py-3 font-medium">{formatINR(p.price)}</td>
+                        <td className="py-3 text-right">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                            isOutOfStock 
+                              ? "bg-rose-50 text-rose-800 border-rose-200" 
+                              : "bg-amber-50 text-amber-800 border-amber-200"
+                          }`}>
+                            {isOutOfStock ? "Out of Stock" : "Low Stock"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-4 pt-4 border-t border-border flex justify-end">
+            <Link 
+              to="/admin/products"
+              className="text-xs uppercase tracking-wider text-gold hover:underline font-semibold flex items-center gap-1"
+            >
+              Go to Product Management Page to Update Stock →
+            </Link>
+          </div>
         </Card>
       )}
 

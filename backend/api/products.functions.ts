@@ -109,7 +109,8 @@ async function updateProductInDbImpl(data: any) {
 async function addProductInDbImpl(data: any) {
   try {
     const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const image = "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&q=80&w=300"; // placeholder
+    const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&q=80&w=600";
+    const image = data.imageUrl || FALLBACK_IMAGE;
     const gallery = [image];
 
     const docRef = doc(db, "products", data.id);

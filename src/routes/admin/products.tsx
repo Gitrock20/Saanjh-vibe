@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { formatINR, type Product } from "@/lib/products";
-import { Plus, Search, Edit2, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { Plus, Search, Edit2, Trash2, X, Upload, ImageIcon } from "lucide-react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { updateProductInDb, addProductInDb, deleteProductFromDb, getDbProducts } from "@/lib/api/products.functions";
 import { auth } from "@/lib/firebase";
@@ -30,6 +30,9 @@ function AdminProducts() {
   const [category, setCategory] = useState<"candles" | "jewellery">("candles");
   const [subCategory, setSubCategory] = useState("");
   const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredList = list.filter(
     (p) =>
@@ -103,10 +106,38 @@ function AdminProducts() {
     setCategory("candles");
     setSubCategory("Soy Candles");
     setDescription("");
+    setImageFile(null);
+    setImagePreview("");
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select a valid image file (JPG, PNG, WebP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB.");
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setImagePreview(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    let imageUrl = imagePreview || "";
+
+    // If no image selected, use a default placeholder
+    if (!imageUrl) {
+      imageUrl = "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&q=80&w=600";
+    }
 
     const toastId = toast.loading("Adding product to database...");
     const newId = `custom_${Date.now()}`;
@@ -120,14 +151,17 @@ function AdminProducts() {
         category,
         subCategory,
         description,
+        imageUrl,
       },
     });
 
     toast.dismiss(toastId);
     if (res.success && res.product) {
       setList((prev) => [res.product as any, ...prev]);
-      toast.success(`Product "${name}" created successfully.`);
+      toast.success(`Product "${name}" added successfully! It now appears on the home page.`);
       setAddingProduct(false);
+      setImageFile(null);
+      setImagePreview("");
     } else {
       const isAuthed = !!auth.currentUser;
       const authEmail = auth.currentUser?.email || "N/A";
@@ -299,6 +333,57 @@ function AdminProducts() {
               </button>
             </div>
             <form onSubmit={handleAddSubmit} className="space-y-4">
+              {/* Image Upload Section */}
+              <div>
+                <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Product Image</span>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`mt-1.5 relative border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200 ${
+                    imagePreview
+                      ? "border-foreground/40 bg-transparent"
+                      : "border-border hover:border-foreground/40 hover:bg-secondary/20"
+                  }`}
+                >
+                  {imagePreview ? (
+                    <div className="relative">
+                      <img
+                        src={imagePreview}
+                        alt="Product preview"
+                        className="w-full h-48 object-cover rounded-lg"
+                      />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                        <div className="text-white text-center">
+                          <Upload className="h-6 w-6 mx-auto mb-1" />
+                          <p className="text-xs font-medium">Click to change image</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(ev) => { ev.stopPropagation(); setImageFile(null); setImagePreview(""); }}
+                        className="absolute top-2 right-2 bg-background/80 hover:bg-background text-foreground rounded-full p-1 transition"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="py-10 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <div className="rounded-full bg-secondary/60 p-3">
+                        <ImageIcon className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-medium">Click to upload product image</p>
+                      <p className="text-xs">JPG, PNG, WebP — max 5MB</p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
+                </div>
+              </div>
+
               <Field label="Product Name" value={name} onChange={(e) => setName(e.target.value)} required />
               <Field label="Tagline" value={tagline} onChange={(e) => setTagline(e.target.value)} required />
               <div className="grid grid-cols-2 gap-4">

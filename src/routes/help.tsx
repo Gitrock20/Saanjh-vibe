@@ -11,13 +11,16 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronUp,
+  Package,
+  Loader2,
+  Send,
   Search,
   Sparkles,
   Award,
-  Send,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, collection, getDocs, query, where, limit } from "firebase/firestore";
 
 type HelpSearch = {
   tab?: "contact" | "shipping" | "track" | "faq" | "care";
@@ -36,7 +39,7 @@ export const Route = createFileRoute("/help")({
 
 function HelpPage() {
   const { tab = "contact" } = Route.useSearch();
-  const navigate = useNavigate();
+  const navigate = Route.useNavigate();
 
   const handleTabChange = (newTab: string) => {
     navigate({ search: { tab: newTab as any } });
@@ -207,14 +210,17 @@ function ContactTab() {
         </form>
 
         <div className="space-y-6 self-start bg-secondary/30 border border-border p-6 rounded-lg">
-          <h3 className="font-serif text-lg border-b border-border pb-3">Studio Details</h3>
+          <h3 className="font-serif text-lg border-b border-border pb-3">Head Office</h3>
           <ul className="space-y-4 text-xs">
             <li className="flex items-start gap-3">
               <Mail className="h-4 w-4 text-gold shrink-0 mt-0.5" />
               <div>
                 <div className="font-medium text-foreground">Email Support</div>
-                <a href="mailto:hello@saanjh.studio" className="text-muted-foreground hover:text-foreground">
-                  hello@saanjh.studio
+                <a
+                  href={`mailto:saanjhvibe@gmail.com?subject=${encodeURIComponent('Help with Order #[Insert Order Number]')}&body=${encodeURIComponent('Hi Saanjh Support,\n\nI am reaching out regarding my recent jewelry order.\n\nMy order number is: [Insert Order Number]\n\nMy question is:\n')}`}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  saanjhvibe@gmail.com
                 </a>
               </div>
             </li>
@@ -237,7 +243,7 @@ function ContactTab() {
             <li className="flex items-start gap-3">
               <MapPin className="h-4 w-4 text-gold shrink-0 mt-0.5" />
               <div>
-                <div className="font-medium text-foreground">Saanjh Studio</div>
+                <div className="font-medium text-foreground">Head Office</div>
                 <div className="text-muted-foreground mt-0.5">Indore, MP, India</div>
               </div>
             </li>
@@ -309,29 +315,77 @@ function TrackTab() {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any | null>(null);
+  const [error, setError] = useState("");
 
-  const handleTrack = (e: React.FormEvent) => {
+  // Build a dynamic timeline from the order status
+  const buildTimeline = (status: string, date: string) => {
+    const steps = [
+      { label: "Order Placed", done: true, date },
+      { label: "Processed & Packed", done: ["Shipped", "Delivered"].includes(status) },
+      { label: "Shipped", done: ["Shipped", "Delivered"].includes(status), active: status === "Shipped" },
+      { label: "Out for Delivery", done: status === "Delivered" },
+      { label: "Delivered", done: status === "Delivered", active: status === "Delivered" },
+    ];
+    if (status === "Cancelled") {
+      return [
+        { label: "Order Placed", done: true, date },
+        { label: "Cancelled", done: true, active: true },
+      ];
+    }
+    return steps;
+  };
+
+  const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
+    setError("");
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const trimId = orderId.trim();
+      const trimPhone = phone.trim().replace(/\s+/g, "");
+
+      // Fetch from Firestore by order ID
+      const snap = await getDoc(doc(db, "orders", trimId));
+
+      if (!snap.exists()) {
+        setError("No order found with this Order ID. Please check and try again.");
+        setLoading(false);
+        return;
+      }
+
+      const data = snap.data();
+
+      // Verify phone number matches
+      const storedPhone = (data.phone || "").replace(/\s+/g, "");
+      if (storedPhone && !storedPhone.includes(trimPhone) && !trimPhone.includes(storedPhone)) {
+        setError("Phone number does not match this order. Please verify your details.");
+        setLoading(false);
+        return;
+      }
+
       setResult({
-        id: orderId.toUpperCase().trim() || "SAANJH-1048",
-        status: "In Transit",
-        carrier: "Delhivery Express",
-        awb: "DLV9837482910",
-        updated: "Today, 11:30 AM",
-        steps: [
-          { label: "Order Placed", date: "May 27, 2:15 PM", done: true },
-          { label: "Processed & Packed", date: "May 28, 10:30 AM", done: true },
-          { label: "Shipped", date: "May 28, 5:45 PM", done: true },
-          { label: "In Transit (Indore Hub)", date: "May 29, 11:30 AM", done: true, active: true },
-          { label: "Out for Delivery", date: "Estimated Tomorrow", done: false },
-        ],
+        id: snap.id,
+        status: data.status || "Processing",
+        consignmentNo: data.consignmentNo || null,
+        customer: data.customer || "",
+        date: data.date || "",
+        total: data.total || 0,
+        steps: buildTimeline(data.status || "Processing", data.date || ""),
       });
-    }, 1500);
+    } catch (err) {
+      console.error(err);
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColor: Record<string, string> = {
+    Processing: "text-amber-600",
+    Shipped: "text-blue-600",
+    Delivered: "text-emerald-600",
+    Cancelled: "text-rose-600",
   };
 
   return (
@@ -339,7 +393,7 @@ function TrackTab() {
       <div>
         <h2 className="font-serif text-3xl mb-3">Track Your Order</h2>
         <p className="text-muted-foreground text-sm leading-relaxed max-w-xl">
-          Enter your 8-digit order number and billing phone number below to view the tracking timeline.
+          Enter your Order ID and billing phone number below to view the live tracking status.
         </p>
       </div>
 
@@ -351,7 +405,7 @@ function TrackTab() {
               <input
                 type="text"
                 required
-                placeholder="e.g. SAANJH-1048"
+                placeholder="e.g. pay_AbcXyz123"
                 value={orderId}
                 onChange={(e) => setOrderId(e.target.value)}
                 className="mt-1.5 block w-full bg-transparent border border-border rounded px-4 py-3 text-sm focus:outline-none focus:border-foreground transition"
@@ -370,19 +424,21 @@ function TrackTab() {
             </label>
           </div>
 
+          {error && (
+            <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded px-4 py-2.5">
+              {error}
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={loading}
             className="inline-flex items-center justify-center gap-2 bg-foreground text-background py-4 px-8 text-xs uppercase tracking-[0.24em] hover:bg-foreground/90 disabled:opacity-50 transition w-full"
           >
             {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Retrieving details...
-              </>
+              <><Loader2 className="h-4 w-4 animate-spin" /> Retrieving details...</>
             ) : (
-              <>
-                Track Package <Search className="h-3.5 w-3.5" />
-              </>
+              <>Track Package <Search className="h-3.5 w-3.5" /></>
             )}
           </button>
         </form>
@@ -390,6 +446,7 @@ function TrackTab() {
 
       {result && (
         <div className="border border-border rounded-lg bg-card overflow-hidden fade-up max-w-xl">
+          {/* Header */}
           <div className="bg-secondary/40 border-b border-border px-6 py-4 flex flex-wrap justify-between items-center gap-3">
             <div>
               <span className="text-xs uppercase tracking-wider text-muted-foreground">Order Ref</span>
@@ -397,21 +454,42 @@ function TrackTab() {
             </div>
             <div className="text-right">
               <span className="text-xs uppercase tracking-wider text-muted-foreground">Current Status</span>
-              <div className="text-sm font-semibold text-gold">{result.status}</div>
+              <div className={`text-sm font-semibold ${statusColor[result.status] || "text-foreground"}`}>
+                {result.status}
+              </div>
             </div>
           </div>
 
           <div className="p-6 space-y-6">
-            {/* Courier Info */}
-            <div className="grid grid-cols-2 gap-4 text-xs border-b border-border pb-4">
-              <div>
-                <span className="text-muted-foreground">Carrier:</span>
-                <span className="ml-1.5 font-medium text-foreground">{result.carrier}</span>
+            {/* Consignment Info */}
+            <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Customer</span>
+                  <span className="font-medium">{result.customer || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Order Date</span>
+                  <span className="font-medium">{result.date || "—"}</span>
+                </div>
               </div>
-              <div>
-                <span className="text-muted-foreground">AWB / Tracking:</span>
-                <span className="ml-1.5 font-medium text-foreground">{result.awb}</span>
-              </div>
+              {result.consignmentNo && (
+                <div className="mt-3 pt-3 border-t border-border/60">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Consignment / AWB Tracking No.</span>
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-mono font-semibold text-blue-600 dark:text-blue-400 text-base tracking-widest">
+                      {result.consignmentNo}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Use this number on the courier's website for detailed tracking.</p>
+                </div>
+              )}
+              {!result.consignmentNo && result.status === "Shipped" && (
+                <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground">
+                  Consignment number will be updated shortly. Check back later.
+                </div>
+              )}
             </div>
 
             {/* Timeline */}

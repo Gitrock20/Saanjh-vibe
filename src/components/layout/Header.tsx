@@ -109,15 +109,6 @@ export function Header() {
                 </Link>
               );
             })}
-            <a
-              href="https://drive.google.com/file/d/1Lj7d3K7KfkOWU1M8n9PthbelknK98eAu/view?usp=drive_link"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="relative py-1 text-foreground/80 hover:text-foreground transition-colors group"
-            >
-              Get the App
-              <span className="absolute left-0 -bottom-0.5 h-px w-0 bg-foreground transition-all group-hover:w-full" />
-            </a>
           </nav>
 
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -268,15 +259,6 @@ export function Header() {
                   </Link>
                 );
               })}
-              <a
-                href="https://drive.google.com/file/d/1Lj7d3K7KfkOWU1M8n9PthbelknK98eAu/view?usp=drive_link"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setOpen(false)}
-                className="border-b border-border py-4 text-lg font-serif"
-              >
-                Get the App
-              </a>
               {userSession && (
                 <>
                   <Link

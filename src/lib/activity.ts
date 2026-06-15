@@ -25,6 +25,7 @@ export type StorageOrder = {
   total: number;
   status: string;
   date: string;
+  note?: string;
   orderDetails?: {
     id: string;
     slug?: string;
@@ -120,7 +121,8 @@ export const registerOrder = (
     pinCode: string;
     phone: string;
     gstin?: string;
-  }
+  },
+  note?: string
 ) => {
   if (typeof window === "undefined") return;
   try {
@@ -137,6 +139,7 @@ export const registerOrder = (
       total,
       status: "Processing",
       date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+      note: note?.trim() || undefined,
       orderDetails: orderDetails || [],
       phone: shippingDetails?.phone || "",
       gstin: shippingDetails?.gstin || "",

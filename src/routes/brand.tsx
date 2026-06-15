@@ -31,7 +31,7 @@ export const Route = createFileRoute("/brand")({
 
 function BrandPage() {
   const { tab = "story" } = Route.useSearch();
-  const navigate = useNavigate();
+  const navigate = Route.useNavigate();
 
   const handleTabChange = (newTab: string) => {
     navigate({ search: { tab: newTab as any } });

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { logUserActivity, registerCustomer } from "@/lib/activity";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendEmailVerification, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendEmailVerification, signOut, fetchSignInMethodsForEmail } from "firebase/auth";
 
 export const Route = createFileRoute("/auth/login")({ component: Login });
 
@@ -48,9 +48,55 @@ function Login() {
         toast.success("Welcome back to Saanjh!");
         navigate({ to: "/" });
       })
-      .catch((error) => {
+      .catch(async (error) => {
         toast.dismiss(toastId);
-        toast.error(error.message || "Failed to sign in. Please check credentials.");
+        const errorCode = error.code;
+        if (
+          errorCode === "auth/user-not-found" ||
+          errorCode === "auth/wrong-password" ||
+          errorCode === "auth/invalid-credential" ||
+          errorCode === "auth/invalid-email"
+        ) {
+          let isNewUser = false;
+          try {
+            const methods = await fetchSignInMethodsForEmail(auth, email);
+            if (methods.length === 0) {
+              isNewUser = true;
+            }
+          } catch (e) {
+            console.warn("fetchSignInMethodsForEmail failed, using local customer list fallback:", e);
+            // Fallback: Check local storage customer list
+            const rawCustomers = localStorage.getItem("saanjh_customers_list");
+            if (rawCustomers) {
+              try {
+                const list = JSON.parse(rawCustomers);
+                const exists = list.some((c: any) => c.email?.toLowerCase() === email.toLowerCase());
+                if (!exists) {
+                  isNewUser = true;
+                }
+              } catch (parseErr) {
+                console.error(parseErr);
+              }
+            } else {
+              isNewUser = true;
+            }
+          }
+
+          if (isNewUser) {
+            toast.error("new user signup first");
+            setTimeout(() => {
+              navigate({ to: "/auth/signup" });
+            }, 1500);
+          } else {
+            if (errorCode === "auth/invalid-email") {
+              toast.error("wrong user id entered");
+            } else {
+              toast.error("wrong password entered");
+            }
+          }
+        } else {
+          toast.error(error.message || "Failed to sign in. Please check credentials.");
+        }
         setLoading(false);
       });
   };

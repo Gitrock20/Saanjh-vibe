@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/layout/SiteShell";
 import { useState } from "react";
 import { toast } from "sonner";
 import { auth } from "@/lib/firebase";
-import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signOut, signInWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signOut, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { logUserActivity, registerCustomer } from "@/lib/activity";
 
 export const Route = createFileRoute("/auth/signup")({ component: Signup });
@@ -84,6 +84,30 @@ function Signup() {
     }
   };
 
+  const handleGoogleSignUp = () => {
+    const provider = new GoogleAuthProvider();
+    setLoading(true);
+    const toastId = toast.loading("Connecting with Google...");
+    signInWithPopup(auth, provider)
+      .then((result) => {
+        const user = result.user;
+        const name = user.displayName || user.email?.split("@")[0] || "User";
+        const emailAddress = user.email || "";
+        localStorage.setItem("saanjh_user_session", JSON.stringify({ email: emailAddress, name }));
+        registerCustomer(name, emailAddress);
+        logUserActivity("User Signup Init", `Registered & logged in via Google as ${name} (${emailAddress})`);
+
+        toast.dismiss(toastId);
+        toast.success("Account created and logged in successfully!");
+        navigate({ to: "/" });
+      })
+      .catch((error: any) => {
+        toast.dismiss(toastId);
+        toast.error(error.message || "Failed to connect with Google.");
+        setLoading(false);
+      });
+  };
+
   return (
     <SiteShell>
       <div className="mx-auto max-w-md px-5 py-20">
@@ -133,6 +157,17 @@ function Signup() {
                 {loading ? "Creating..." : "Create account"}
               </button>
             </form>
+
+            <div className="my-8 flex items-center gap-3 text-xs uppercase tracking-widest text-muted-foreground">
+              <span className="flex-1 h-px bg-border" /> or <span className="flex-1 h-px bg-border" />
+            </div>
+            <button
+              onClick={handleGoogleSignUp}
+              disabled={loading}
+              className="w-full border border-border py-4 text-xs uppercase tracking-[0.24em] hover:border-foreground disabled:opacity-50 transition cursor-pointer"
+            >
+              Continue with Google
+            </button>
 
             <p className="mt-8 text-center text-sm text-muted-foreground">
               Already have an account?{" "}

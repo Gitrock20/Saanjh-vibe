@@ -2,7 +2,7 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 let isBuild = false;
 
-export default defineConfig({
+export default (defineConfig as any)({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
@@ -18,7 +18,7 @@ export default defineConfig({
   plugins: [
     {
       name: "ssr-fix-plugin",
-      config(config, env) {
+      config(config: any, env: any) {
         isBuild = env.command === "build";
         const isSSR = !!(env.ssrBuild || config.build?.ssr);
         if (isSSR) {
@@ -50,7 +50,7 @@ export default defineConfig({
           }
         }
       },
-      configEnvironment(name, config) {
+      configEnvironment(name: any, config: any) {
         const isSSR = name === "ssr" || name === "nitro" || config.consumer === "server";
         if (isSSR) {
           if (!isBuild && name === "ssr") {
@@ -125,7 +125,7 @@ export default defineConfig({
           }
         }
       },
-      configurePreviewServer(server) {
+      configurePreviewServer(server: any) {
         console.log("[DEBUG] SSR Env Build:", JSON.stringify(server.config.environments.ssr?.build, null, 2));
       }
     },
